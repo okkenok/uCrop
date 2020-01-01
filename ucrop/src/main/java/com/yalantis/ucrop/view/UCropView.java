@@ -10,6 +10,7 @@ import android.widget.FrameLayout;
 import com.yalantis.ucrop.R;
 import com.yalantis.ucrop.callback.CropBoundsChangeListener;
 import com.yalantis.ucrop.callback.OverlayViewChangeListener;
+import com.yalantis.ucrop.util.RectUtils;
 
 import androidx.annotation.NonNull;
 
@@ -17,6 +18,9 @@ public class UCropView extends FrameLayout {
 
     private GestureCropImageView mGestureCropImageView;
     private final OverlayView mViewOverlay;
+
+    private float[] mInitialImageCorners;
+    private float[] mInitialImageCenter;
 
     public UCropView(Context context, AttributeSet attrs) {
         this(context, attrs, 0);
@@ -49,6 +53,8 @@ public class UCropView extends FrameLayout {
             @Override
             public void onCropRectUpdated(RectF cropRect) {
                 mGestureCropImageView.setCropRect(cropRect);
+                RectUtils.getCornersFromRect(cropRect);
+                // TODO: 2020/1/1 wrap to the center
             }
         });
     }

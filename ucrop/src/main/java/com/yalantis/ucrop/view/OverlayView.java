@@ -9,15 +9,19 @@ import android.graphics.RectF;
 import android.graphics.Region;
 import android.os.Build;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
 
 import com.yalantis.ucrop.R;
 import com.yalantis.ucrop.callback.OverlayViewChangeListener;
+import com.yalantis.ucrop.util.RectCentring;
 import com.yalantis.ucrop.util.RectUtils;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
+import java.lang.ref.WeakReference;
+import java.util.Arrays;
 
 import androidx.annotation.ColorInt;
 import androidx.annotation.IntDef;
@@ -45,6 +49,7 @@ public class OverlayView extends View {
 
     private final RectF mCropViewRect = new RectF();
     private final RectF mTempRect = new RectF();
+    private final RectF mInitialRect = new RectF();
 
     protected int mThisWidth, mThisHeight;
     protected float[] mCropGridCorners;
@@ -68,6 +73,9 @@ public class OverlayView extends View {
     private int mTouchPointThreshold;
     private int mCropRectMinSize;
     private int mCropRectCornerTouchAreaLineLength;
+
+    private float[] mInitialCropGridCorners;
+    private float[] mInitialCropGridCenter;
 
     private OverlayViewChangeListener mCallback;
 
@@ -103,6 +111,12 @@ public class OverlayView extends View {
     @NonNull
     public RectF getCropViewRect() {
         return mCropViewRect;
+    }
+
+    public void setCropViewRect(@NonNull RectF rect){
+        mCropViewRect.set(rect);
+        updateGridPoints();
+        invalidate();
     }
 
     @Deprecated
@@ -252,9 +266,22 @@ public class OverlayView extends View {
         updateGridPoints();
     }
 
+    public void setCropRectWrapToCenter(){
+        if(!mShouldSetupCropBounds && !isCropViewRectWrapToCenter()){
+            post(new WrapCropRectToCenterRunnable(OverlayView.this, 500, mCropViewRect, mInitialRect));
+        }
+    }
+
     private void updateGridPoints() {
         mCropGridCorners = RectUtils.getCornersFromRect(mCropViewRect);
         mCropGridCenter = RectUtils.getCenterFromRect(mCropViewRect);
+
+        if (mShouldSetupCropBounds) {
+            mInitialCropGridCorners = mCropGridCorners;
+            mInitialCropGridCenter = mCropGridCenter;
+            Log.i("hg", Arrays.toString(mInitialCropGridCorners));
+            Log.i("hg", Arrays.toString(mInitialCropGridCenter));
+        }
 
         mGridPoints = null;
         mCircularPath.reset();
@@ -282,6 +309,7 @@ public class OverlayView extends View {
             if (mShouldSetupCropBounds) {
                 mShouldSetupCropBounds = false;
                 setTargetAspectRatio(mTargetAspectRatio);
+                mInitialRect.set(mCropViewRect);
             }
         }
     }
@@ -341,6 +369,8 @@ public class OverlayView extends View {
             if (mCallback != null) {
                 mCallback.onCropRectUpdated(mCropViewRect);
             }
+
+            setCropRectWrapToCenter();
         }
 
         return false;
@@ -516,6 +546,61 @@ public class OverlayView extends View {
         }
     }
 
+    /**
+     * This method checks whether current crop rect fills in center
+     */
+    protected boolean isCropViewRectWrapToCenter() {
+        return isCropViewRectWrapToCenter(mCropGridCenter);
+    }
+
+    /**
+     * This methods checks whether the corp rect that is wrap tp center as like initial rect do
+     * or anim to the center.
+     *
+     * @param rectCorners - corners of a rectangle
+     * @return - true if it wraps to window center, false - otherwise
+     */
+    protected boolean isCropViewRectWrapToCenter(float[] rectCorners) {
+        return Arrays.toString(mInitialCropGridCenter).equals(Arrays.toString(rectCorners));
+    }
+
+    private static class WrapCropRectToCenterRunnable implements Runnable {
+
+        private final WeakReference<OverlayView> mOverlayView;
+
+        private final long mDurationMs, mStartTime;
+        private final RectF mCropRect;
+        private final RectF mInitialRect;
+
+        public WrapCropRectToCenterRunnable(OverlayView overlayView,
+                                            long durationMs,
+                                            RectF cropRect,
+                                            RectF initialRect) {
+            mOverlayView = new WeakReference<>(overlayView);
+
+            mDurationMs = durationMs;
+            mCropRect = cropRect;
+            mInitialRect = initialRect;
+            mStartTime = System.currentTimeMillis();
+        }
+
+        @Override
+        public void run() {
+            OverlayView overlayView = mOverlayView.get();
+            if(overlayView == null){
+                return;
+            }
+            long now = System.currentTimeMillis();
+            float currentMs = Math.min(mDurationMs, now - mStartTime);
+
+            overlayView.setCropViewRect(RectCentring.centeringRect(currentMs, mCropRect, mInitialRect, mDurationMs));
+
+            if(!overlayView.isCropViewRectWrapToCenter()){
+                Log.i("hg", "isCropViewRectWrapToCenter() is false.");
+                overlayView.post(this);
+            }
+        }
+    }
     /**
      * This method extracts all needed values from the styled attributes.
      * Those are used to configure the view.
